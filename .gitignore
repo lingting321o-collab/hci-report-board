@@ -1,0 +1,7 @@
+__pycache__/
+.vercel/
+.env*
+*.pyc
+.~*
+render-check/
+*.docx
