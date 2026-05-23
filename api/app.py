@@ -6,7 +6,67 @@ from api.convert import build_docx, parse_report
 app = Flask(__name__)
 
 
+def _first_match(text, pattern, default=""):
+    import re
+
+    match = re.search(pattern, text, re.S)
+    return match.group(1).strip() if match else default
+
+
+def _find_risk(report, keywords):
+    for risk in report.get("risks", []):
+        haystack = risk.get("name", "") + risk.get("analysis", "") + risk.get("advice", "")
+        if any(keyword in haystack for keyword in keywords):
+            return risk
+    return None
+
+
+def _patch_details(patch):
+    if not patch:
+        return {}
+    text = patch.get("analysis", "") + "\n" + patch.get("advice", "")
+    return {
+        "warning_id": _first_match(text, r"预警编号[:：]?\s*([A-Z]{2}\d{8,})"),
+        "patch_name": _first_match(text, r"补丁名称[:：]?\s*(.*?)(?=补丁升级影响|预计耗时|问题描述|补丁安装顺序|检测结果|$)"),
+        "upgrade_impact": _first_match(text, r"补丁升级影响[:：]?\s*(.*?)(?=预计耗时|问题描述|补丁安装顺序|检测结果|$)"),
+        "problem": _first_match(text, r"问题描述[:：]?\s*(.*?)(?=补丁安装顺序|检测结果|补丁下载链接|$)"),
+        "support_url": _first_match(text, r"(https://support\.sangfor\.com\.cn/[^\s，。；;]+)"),
+    }
+
+
+def _patch_text(patch, patch_connectivity):
+    details = _patch_details(patch)
+    warning_id = details.get("warning_id")
+    patch_name = details.get("patch_name")
+    problem = details.get("problem") or "深信服已发布的共性问题合集"
+    upgrade_impact = details.get("upgrade_impact") or "热补丁，需按实施文档确认升级影响"
+    support_url = details.get("support_url") or "https://support.sangfor.com.cn/productSoftware/list?product_id=33"
+
+    if patch_name:
+        what = f"缺失 {patch_name}"
+        if warning_id:
+            what = f"缺失预警 {warning_id} 对应补丁 {patch_name}"
+        what += f"；报告描述为：{problem}。"
+    else:
+        what = "检测到预警补丁缺失；需确认补丁状态并补齐深信服推荐补丁。"
+    if patch_connectivity:
+        what += " 同时检测到在线补丁平台连通性异常，可能无法及时接收补丁推送。"
+
+    impact = (
+        "客户危害：该补丁属于深信服 HCI 已发布的预警/合集补丁，补丁介绍指向已知问题修复列表，"
+        f"本次巡检报告中对应问题为“{problem}”。如果不修复，生产平台会继续暴露在这些已知共性缺陷下，"
+        "后续可能出现管理平台异常、虚拟机运行异常、存储或集群服务不稳定、告警/补丁推送滞后等问题；"
+        "一旦在业务高峰触发，客户侧表现就是业务访问变慢、虚拟机中断、故障定位和恢复时间变长，严重时会扩大为业务不可用。"
+        f"报告同时提示升级影响为“{upgrade_impact}”，建议把维护窗口前置安排，而不是等故障触发后被动处理。"
+    )
+    action = f"按深信服补丁发布说明核对版本，协调维护窗口并联系深信服技术支持升级；补丁页面：{support_url}"
+    return what, impact, action
+
+
 def build_actions(report):
+    patch = _find_risk(report, ["预警补丁"])
+    patch_connectivity = _find_risk(report, ["补丁服务连通性", "在线补丁平台"])
+    patch_what, patch_impact, patch_action = _patch_text(patch, patch_connectivity)
     return [
         (
             "P0",
@@ -20,9 +80,9 @@ def build_actions(report):
         (
             "P0",
             "预警补丁缺失",
-            "检测到预警补丁缺失或需复核补丁状态。",
-            "客户危害：已知共性问题可能在生产环境触发，出现平台异常、虚拟机异常或故障恢复困难，影响客户对平台稳定性的信任。",
-            "协调维护窗口，联系深信服技术支持完成补丁升级。",
+            patch_what,
+            patch_impact,
+            patch_action,
             "1 周内",
             "FCE4D6",
         ),
@@ -74,7 +134,7 @@ INDEX_HTML = r'''<!doctype html>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>HCI 巡检整改看板生成器</title>
   <style>
-    :root{--ink:#1f2937;--muted:#6b7280;--line:#d9e2f3;--blue:#1f4e79;--blue-soft:#eef6fc;--red:#c00000;--red-soft:#fce4d6;--amber:#b45f06;--amber-soft:#fff2cc;--surface:#fff;--page:#f6f8fb;--green:#548235;--green-soft:#e2f0d9}
+    :root{--ink:#1f2937;--muted:#6b7280;--line:#d9e2f3;--blue:#1f4e79;--blue-soft:#eef6fc;--red:#c00000;--red-soft:#fce4d6;--amber:#b45f06;--amber-soft:#fff2cc;--surface:#fff;--page:#f6f8fb;--green:#548235}
     *{box-sizing:border-box} body{margin:0;min-height:100vh;background:var(--page);color:var(--ink);font-family:"Microsoft YaHei","PingFang SC",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
     main{width:min(1180px,calc(100vw - 40px));margin:0 auto;padding:32px 0 42px}.topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:22px}h1{margin:0;color:var(--blue);font-size:28px}.sub{margin:8px 0 0;color:var(--muted);font-size:14px}.badge{border:1px solid var(--line);background:var(--surface);color:var(--blue);border-radius:999px;padding:8px 12px;font-size:13px;white-space:nowrap}
     .layout{display:grid;grid-template-columns:minmax(380px,.92fr) minmax(440px,1.08fr);gap:18px}.panel{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:20px}.panel-title{margin:0 0 12px;color:var(--blue);font-size:17px}.upload{min-height:242px;display:grid;place-items:center;border:2px dashed #b8c7df;border-radius:8px;background:var(--blue-soft);text-align:center}.upload.dragging{border-color:var(--blue);background:#e4f0fa}.upload input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}.upload-title{margin:0 0 8px;font-size:20px;font-weight:700}.upload-note{margin:0 0 18px;color:var(--muted);font-size:14px}button,.file-button{display:inline-flex;align-items:center;justify-content:center;min-height:40px;border:0;border-radius:7px;background:var(--blue);color:#fff;padding:0 16px;font-weight:700;cursor:pointer;font-size:14px}button:disabled{cursor:not-allowed;opacity:.5}.file-name{margin-top:14px;color:var(--blue);font-size:13px;word-break:break-all}.actions{display:flex;align-items:center;gap:12px;margin-top:16px}.status{color:var(--muted);font-size:13px}.error{color:var(--red)}
@@ -94,31 +154,24 @@ INDEX_HTML = r'''<!doctype html>
         <div class="progress-box"><div class="progress-meta"><span id="progressLabel">等待文件</span><span><span id="percent">0%</span> · <span class="speed" id="speed">0 KB/s</span></span></div><div class="bar"><span id="bar"></span></div></div>
         <div class="actions"><button id="submit" type="submit" disabled>生成整改看板</button><span class="status" id="status">请先上传并确认预览</span></div>
       </form>
-      <p class="hint">说明：预览会读取报告中的得分、异常/告警、备份覆盖率和核心整改项；最终下载的 Word 仍会按整改看板样式生成。</p>
+      <p class="hint">说明：预警补丁会结合报告内补丁编号、补丁名称、升级影响和深信服补丁页面链接生成危害说明。</p>
     </div>
-    <aside class="panel">
-      <h2 class="panel-title">预览窗口</h2>
-      <div class="preview-window"><div class="preview-head"><strong>整改看板预览</strong><span class="small" id="previewState">未上传</span></div><div class="preview-body" id="preview"><div class="empty"><div><b>这里会显示识别结果</b><span>选择巡检报告后，系统会先生成预览。</span></div></div></div></div>
-    </aside>
+    <aside class="panel"><h2 class="panel-title">预览窗口</h2><div class="preview-window"><div class="preview-head"><strong>整改看板预览</strong><span class="small" id="previewState">未上传</span></div><div class="preview-body" id="preview"><div class="empty"><div><b>这里会显示识别结果</b><span>选择巡检报告后，系统会先生成预览。</span></div></div></div></div></aside>
   </section>
 </main>
 <script>
-const form=document.querySelector('#form'),fileInput=document.querySelector('#file'),fileName=document.querySelector('#fileName'),submit=document.querySelector('#submit'),statusEl=document.querySelector('#status'),drop=document.querySelector('#drop'),bar=document.querySelector('#bar'),percentEl=document.querySelector('#percent'),speedEl=document.querySelector('#speed'),progressLabel=document.querySelector('#progressLabel'),preview=document.querySelector('#preview'),previewState=document.querySelector('#previewState');
-let selectedFile=null, previewReady=false;
-function fmtSpeed(bytesPerSecond){if(!isFinite(bytesPerSecond)||bytesPerSecond<=0)return '0 KB/s'; if(bytesPerSecond>1024*1024)return (bytesPerSecond/1024/1024).toFixed(2)+' MB/s'; return Math.max(1,Math.round(bytesPerSecond/1024))+' KB/s'}
-function resetProgress(label){bar.style.width='0%';percentEl.textContent='0%';speedEl.textContent='0 KB/s';progressLabel.textContent=label}
-function setProgress(evt,start,last){if(!evt.lengthComputable)return last;const now=Date.now(),pct=Math.round((evt.loaded/evt.total)*100);bar.style.width=pct+'%';percentEl.textContent=pct+'%';const elapsed=(now-start)/1000;speedEl.textContent=fmtSpeed(evt.loaded/Math.max(elapsed,.1));return {time:now,loaded:evt.loaded}}
-function setFile(file){if(!file)return;if(!file.name.toLowerCase().endsWith('.docx')){statusEl.textContent='请选择 .docx 文件';statusEl.className='status error';submit.disabled=true;return}selectedFile=file;previewReady=false;submit.disabled=true;fileName.textContent=file.name+' · '+(file.size/1024/1024).toFixed(2)+' MB';statusEl.textContent='正在上传并解析预览...';statusEl.className='status';previewState.textContent='解析中';resetProgress('预览上传');loadPreview(file)}
-fileInput.addEventListener('change',()=>setFile(fileInput.files[0]));['dragenter','dragover'].forEach(n=>drop.addEventListener(n,e=>{e.preventDefault();drop.classList.add('dragging')}));['dragleave','drop'].forEach(n=>drop.addEventListener(n,e=>{e.preventDefault();drop.classList.remove('dragging')}));drop.addEventListener('drop',e=>{const file=e.dataTransfer.files[0];if(!file)return;const transfer=new DataTransfer();transfer.items.add(file);fileInput.files=transfer.files;setFile(file)});
-function upload(url,file,onDone){const xhr=new XMLHttpRequest();const data=new FormData();data.append('file',file);let start=Date.now(),last={time:start,loaded:0};xhr.upload.onprogress=e=>{last=setProgress(e,start,last)};xhr.onload=()=>{if(xhr.status>=200&&xhr.status<300)onDone(null,xhr);else{let msg='请求失败';try{msg=JSON.parse(xhr.responseText).error||msg}catch(e){}onDone(new Error(msg),xhr)}};xhr.onerror=()=>onDone(new Error('网络连接失败'),xhr);xhr.open('POST',url);xhr.send(data)}
-function loadPreview(file){preview.innerHTML='<div class="empty"><div><b>正在解析预览...</b><span>文件上传中，请稍等。</span></div></div>';upload('/api/preview',file,(err,xhr)=>{if(err){preview.innerHTML='<div class="empty"><div><b class="error">预览失败</b><span>'+err.message+'</span></div></div>';statusEl.textContent=err.message;statusEl.className='status error';previewState.textContent='失败';return}const data=JSON.parse(xhr.responseText);renderPreview(data);previewReady=true;submit.disabled=false;statusEl.textContent='预览已生成，可以下载整改看板';statusEl.className='status ok';previewState.textContent='已就绪';progressLabel.textContent='预览完成'})}
+const form=document.querySelector('#form'),fileInput=document.querySelector('#file'),fileName=document.querySelector('#fileName'),submit=document.querySelector('#submit'),statusEl=document.querySelector('#status'),drop=document.querySelector('#drop'),bar=document.querySelector('#bar'),percentEl=document.querySelector('#percent'),speedEl=document.querySelector('#speed'),progressLabel=document.querySelector('#progressLabel'),preview=document.querySelector('#preview'),previewState=document.querySelector('#previewState');let selectedFile=null,previewReady=false;
+function fmtSpeed(b){if(!isFinite(b)||b<=0)return'0 KB/s';if(b>1048576)return(b/1048576).toFixed(2)+' MB/s';return Math.max(1,Math.round(b/1024))+' KB/s'}
+function resetProgress(t){bar.style.width='0%';percentEl.textContent='0%';speedEl.textContent='0 KB/s';progressLabel.textContent=t}
+function setProgress(e,s){if(!e.lengthComputable)return;const p=Math.round(e.loaded/e.total*100);bar.style.width=p+'%';percentEl.textContent=p+'%';speedEl.textContent=fmtSpeed(e.loaded/Math.max((Date.now()-s)/1000,.1))}
 function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function upload(url,file,done){const xhr=new XMLHttpRequest(),data=new FormData(),start=Date.now();data.append('file',file);xhr.upload.onprogress=e=>setProgress(e,start);xhr.onload=()=>{if(xhr.status>=200&&xhr.status<300)done(null,xhr);else{let m='请求失败';try{m=JSON.parse(xhr.responseText).error||m}catch(e){}done(new Error(m),xhr)}};xhr.onerror=()=>done(new Error('网络连接失败'),xhr);xhr.open('POST',url);if(url==='/api/convert')xhr.responseType='blob';xhr.send(data)}
+function setFile(file){if(!file)return;if(!file.name.toLowerCase().endsWith('.docx')){statusEl.textContent='请选择 .docx 文件';statusEl.className='status error';submit.disabled=true;return}selectedFile=file;previewReady=false;submit.disabled=true;fileName.textContent=file.name+' · '+(file.size/1048576).toFixed(2)+' MB';statusEl.textContent='正在上传并解析预览...';statusEl.className='status';previewState.textContent='解析中';resetProgress('预览上传');loadPreview(file)}
+fileInput.addEventListener('change',()=>setFile(fileInput.files[0]));['dragenter','dragover'].forEach(n=>drop.addEventListener(n,e=>{e.preventDefault();drop.classList.add('dragging')}));['dragleave','drop'].forEach(n=>drop.addEventListener(n,e=>{e.preventDefault();drop.classList.remove('dragging')}));drop.addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(!f)return;const t=new DataTransfer();t.items.add(f);fileInput.files=t.files;setFile(f)});
+function loadPreview(file){preview.innerHTML='<div class="empty"><div><b>正在解析预览...</b><span>文件上传中，请稍等。</span></div></div>';upload('/api/preview',file,(err,xhr)=>{if(err){preview.innerHTML='<div class="empty"><div><b class="error">预览失败</b><span>'+esc(err.message)+'</span></div></div>';statusEl.textContent=err.message;statusEl.className='status error';previewState.textContent='失败';return}renderPreview(JSON.parse(xhr.responseText));previewReady=true;submit.disabled=false;statusEl.textContent='预览已生成，可以下载整改看板';statusEl.className='status ok';previewState.textContent='已就绪';progressLabel.textContent='预览完成'})}
 function renderPreview(data){const actions=data.actions||[];preview.innerHTML='<div class="cards"><div class="metric"><span>巡检得分</span><strong>'+esc(data.score)+'</strong></div><div class="metric critical"><span>异常项</span><strong>'+esc(data.critical)+'</strong></div><div class="metric"><span>告警项</span><strong>'+esc(data.warning)+'</strong></div><div class="metric critical"><span>备份覆盖率</span><strong>'+esc(data.backup_rate)+'</strong></div></div><div class="small">设备：HCI-'+esc(data.device_id)+'（'+esc(data.ip)+'） · 巡检日期：'+esc(data.date)+' · 风险项：'+esc(data.risk_count)+' 条</div><div class="section-label">核心整改项</div><div class="action-list">'+actions.map(a=>'<div class="action '+(a.level==='P0'?'p0':'')+'"><div class="action-top"><span class="pill">'+esc(a.level)+'</span><b>'+esc(a.name)+'</b></div><p>'+esc(a.what)+'</p><p class="harm"><b>不处理的客户危害：</b>'+esc(a.impact)+'</p><p><b>动作：</b>'+esc(a.do)+'</p></div>').join('')+'</div>'}
-form.addEventListener('submit',e=>{e.preventDefault();if(!selectedFile||!previewReady)return;submit.disabled=true;statusEl.textContent='正在上传并生成 Word...';statusEl.className='status';resetProgress('生成上传');upload('/api/convert',selectedFile,(err,xhr)=>{submit.disabled=false;if(err){statusEl.textContent=err.message;statusEl.className='status error';return}const blob=xhr.response;const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='HCI整改看板.docx';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);statusEl.textContent='已生成并开始下载';statusEl.className='status ok';progressLabel.textContent='生成完成'});const oldOpen=XMLHttpRequest.prototype.open});
-const originalUpload=upload;
-function upload(url,file,onDone){const xhr=new XMLHttpRequest();const data=new FormData();data.append('file',file);let start=Date.now(),last={time:start,loaded:0};xhr.upload.onprogress=e=>{last=setProgress(e,start,last)};xhr.onload=()=>{if(xhr.status>=200&&xhr.status<300)onDone(null,xhr);else{let msg='请求失败';try{msg=JSON.parse(xhr.responseText).error||msg}catch(e){}onDone(new Error(msg),xhr)}};xhr.onerror=()=>onDone(new Error('网络连接失败'),xhr);xhr.open('POST',url);if(url==='/api/convert')xhr.responseType='blob';xhr.send(data)}
-</script>
-</body></html>'''
+form.addEventListener('submit',e=>{e.preventDefault();if(!selectedFile||!previewReady)return;submit.disabled=true;statusEl.textContent='正在上传并生成 Word...';statusEl.className='status';resetProgress('生成上传');upload('/api/convert',selectedFile,(err,xhr)=>{submit.disabled=false;if(err){statusEl.textContent=err.message;statusEl.className='status error';return}const u=URL.createObjectURL(xhr.response),a=document.createElement('a');a.href=u;a.download='HCI整改看板.docx';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u);statusEl.textContent='已生成并开始下载';statusEl.className='status ok';progressLabel.textContent='生成完成'})});
+</script></body></html>'''
 
 
 @app.get("/")
