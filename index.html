@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HCI 巡检整改看板生成器</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #1f2937;
+        --muted: #6b7280;
+        --line: #d9e2f3;
+        --blue: #1f4e79;
+        --blue-soft: #eef6fc;
+        --red: #c00000;
+        --red-soft: #fce4d6;
+        --amber: #b45f06;
+        --amber-soft: #fff2cc;
+        --surface: #ffffff;
+        --page: #f6f8fb;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--page);
+        color: var(--ink);
+        font-family:
+          "Microsoft YaHei",
+          "PingFang SC",
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+      }
+
+      main {
+        width: min(1120px, calc(100vw - 40px));
+        margin: 0 auto;
+        padding: 34px 0 44px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        margin-bottom: 24px;
+      }
+
+      h1 {
+        margin: 0;
+        color: var(--blue);
+        font-size: 28px;
+        letter-spacing: 0;
+      }
+
+      .sub {
+        margin: 8px 0 0;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .badge {
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--blue);
+        border-radius: 999px;
+        padding: 8px 12px;
+        font-size: 13px;
+        white-space: nowrap;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+        gap: 18px;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        background: var(--surface);
+        border-radius: 8px;
+        padding: 22px;
+      }
+
+      .upload {
+        min-height: 312px;
+        display: grid;
+        place-items: center;
+        border: 2px dashed #b8c7df;
+        border-radius: 8px;
+        background: var(--blue-soft);
+        text-align: center;
+        transition:
+          border-color 0.16s ease,
+          background 0.16s ease;
+      }
+
+      .upload.dragging {
+        border-color: var(--blue);
+        background: #e4f0fa;
+      }
+
+      .upload input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .upload-title {
+        margin: 0 0 8px;
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--ink);
+      }
+
+      .upload-note {
+        margin: 0 0 18px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      button,
+      .file-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        min-height: 40px;
+        border: 0;
+        border-radius: 7px;
+        background: var(--blue);
+        color: #fff;
+        padding: 0 16px;
+        font-weight: 700;
+        cursor: pointer;
+        font-size: 14px;
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+
+      .file-name {
+        margin-top: 14px;
+        color: var(--blue);
+        font-size: 13px;
+        word-break: break-all;
+      }
+
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+
+      .metric {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 14px;
+        background: #fff;
+      }
+
+      .metric strong {
+        display: block;
+        font-size: 24px;
+        color: var(--blue);
+        margin-top: 4px;
+      }
+
+      .metric span {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .risk-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .risk {
+        border: 1px solid var(--line);
+        border-left: 5px solid var(--amber);
+        border-radius: 8px;
+        padding: 12px 14px;
+        background: #fff;
+      }
+
+      .risk.critical {
+        border-left-color: var(--red);
+        background: var(--red-soft);
+      }
+
+      .risk b {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .risk p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 16px;
+      }
+
+      .status {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .error {
+        color: var(--red);
+      }
+
+      @media (max-width: 820px) {
+        main {
+          width: min(100vw - 24px, 1120px);
+          padding-top: 22px;
+        }
+
+        .topbar,
+        .layout {
+          display: block;
+        }
+
+        .badge {
+          display: inline-block;
+          margin-top: 14px;
+        }
+
+        .panel {
+          margin-bottom: 14px;
+          padding: 16px;
+        }
+
+        .cards {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="topbar">
+        <div>
+          <h1>HCI 巡检整改看板生成器</h1>
+          <p class="sub">上传深信服原始巡检报告，自动生成客户展示版 Word 看板。</p>
+        </div>
+        <div class="badge">输出格式：.docx</div>
+      </div>
+
+      <section class="layout">
+        <div class="panel">
+          <form id="form">
+            <label class="upload" id="drop">
+              <input id="file" type="file" accept=".docx" />
+              <span>
+                <p class="upload-title">拖入巡检报告，或选择 Word 文件</p>
+                <p class="upload-note">支持深信服 HCI 产品服务巡检报告 .docx</p>
+                <span class="file-button">选择文件</span>
+                <div class="file-name" id="fileName"></div>
+              </span>
+            </label>
+            <div class="actions">
+              <button id="submit" type="submit" disabled>生成整改看板</button>
+              <span class="status" id="status">等待上传文件</span>
+            </div>
+          </form>
+        </div>
+
+        <aside class="panel">
+          <div class="cards">
+            <div class="metric"><span>首页展示</span><strong>4 个指标</strong></div>
+            <div class="metric"><span>核心整改</span><strong>6 条以内</strong></div>
+            <div class="metric"><span>优先级</span><strong>P0 / P1</strong></div>
+            <div class="metric"><span>会后跟踪</span><strong>明细备查</strong></div>
+          </div>
+
+          <div class="risk-list">
+            <div class="risk critical">
+              <b>P0：先处理会影响恢复和稳定性的事项</b>
+              <p>备份空间、备份覆盖率、预警补丁、虚拟机网卡异常。</p>
+            </div>
+            <div class="risk">
+              <b>P1：纳入近期整改计划</b>
+              <p>网络链路、STP、账号密码、端口、告警通知、虚拟机配置规范。</p>
+            </div>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <script>
+      const form = document.querySelector("#form");
+      const fileInput = document.querySelector("#file");
+      const fileName = document.querySelector("#fileName");
+      const submit = document.querySelector("#submit");
+      const statusEl = document.querySelector("#status");
+      const drop = document.querySelector("#drop");
+
+      function setFile(file) {
+        if (!file) return;
+        if (!file.name.toLowerCase().endsWith(".docx")) {
+          statusEl.textContent = "请选择 .docx 文件";
+          statusEl.className = "status error";
+          submit.disabled = true;
+          return;
+        }
+        fileName.textContent = file.name;
+        statusEl.textContent = "文件已就绪";
+        statusEl.className = "status";
+        submit.disabled = false;
+      }
+
+      fileInput.addEventListener("change", () => setFile(fileInput.files[0]));
+
+      ["dragenter", "dragover"].forEach((eventName) => {
+        drop.addEventListener(eventName, (event) => {
+          event.preventDefault();
+          drop.classList.add("dragging");
+        });
+      });
+
+      ["dragleave", "drop"].forEach((eventName) => {
+        drop.addEventListener(eventName, (event) => {
+          event.preventDefault();
+          drop.classList.remove("dragging");
+        });
+      });
+
+      drop.addEventListener("drop", (event) => {
+        const file = event.dataTransfer.files[0];
+        if (!file) return;
+        const transfer = new DataTransfer();
+        transfer.items.add(file);
+        fileInput.files = transfer.files;
+        setFile(file);
+      });
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        submit.disabled = true;
+        statusEl.textContent = "正在生成，请稍等...";
+        statusEl.className = "status";
+
+        const data = new FormData();
+        data.append("file", file);
+
+        try {
+          const response = await fetch("/api/convert", {
+            method: "POST",
+            body: data,
+          });
+
+          if (!response.ok) {
+            const error = await response.json().catch(() => ({ error: "生成失败" }));
+            throw new Error(error.error || "生成失败");
+          }
+
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "HCI整改看板.docx";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+          statusEl.textContent = "已生成并开始下载";
+        } catch (error) {
+          statusEl.textContent = error.message;
+          statusEl.className = "status error";
+        } finally {
+          submit.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

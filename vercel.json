@@ -1,0 +1,24 @@
+{
+  "functions": {
+    "api/convert.py": {
+      "maxDuration": 30
+    }
+  },
+  "routes": [
+    {
+      "src": "/api/convert",
+      "dest": "/api/convert.py"
+    },
+    {
+      "src": "/",
+      "dest": "/public/index.html"
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/public/index.html"
+    }
+  ]
+}
