@@ -1,12 +1,1 @@
-{
-  "rewrites": [
-    {
-      "source": "/api/convert",
-      "destination": "/api/convert.py"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
-  ]
-}
+{}
