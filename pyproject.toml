@@ -4,8 +4,9 @@ version = "0.1.0"
 description = "Generate HCI remediation board reports from Sangfor inspection docx files."
 requires-python = ">=3.12"
 dependencies = [
+  "flask==3.0.3",
   "python-docx==1.1.2"
 ]
 
 [tool.vercel]
-entrypoint = "api.convert:handler"
+entrypoint = "api.app:app"
