@@ -20,6 +20,8 @@ COLOR = {
     "orange2": "FFF2CC", "gray": "F3F4F6", "line": "D9E2F3"
 }
 
+INDEX_HTML = r'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>HCI 巡检整改看板生成器</title><style>:root{--ink:#1f2937;--muted:#6b7280;--line:#d9e2f3;--blue:#1f4e79;--blue-soft:#eef6fc;--red:#c00000;--red-soft:#fce4d6;--amber:#b45f06;--surface:#fff;--page:#f6f8fb}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--page);color:var(--ink);font-family:"Microsoft YaHei","PingFang SC",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main{width:min(1120px,calc(100vw - 40px));margin:0 auto;padding:34px 0 44px}.topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:24px}h1{margin:0;color:var(--blue);font-size:28px}.sub{margin:8px 0 0;color:var(--muted);font-size:14px}.badge{border:1px solid var(--line);background:var(--surface);color:var(--blue);border-radius:999px;padding:8px 12px;font-size:13px;white-space:nowrap}.layout{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(320px,.95fr);gap:18px}.panel{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:22px}.upload{min-height:312px;display:grid;place-items:center;border:2px dashed #b8c7df;border-radius:8px;background:var(--blue-soft);text-align:center}.upload.dragging{border-color:var(--blue);background:#e4f0fa}.upload input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}.upload-title{margin:0 0 8px;font-size:20px;font-weight:700}.upload-note{margin:0 0 18px;color:var(--muted);font-size:14px}button,.file-button{display:inline-flex;align-items:center;justify-content:center;min-height:40px;border:0;border-radius:7px;background:var(--blue);color:#fff;padding:0 16px;font-weight:700;cursor:pointer;font-size:14px}button:disabled{cursor:not-allowed;opacity:.55}.file-name{margin-top:14px;color:var(--blue);font-size:13px;word-break:break-all}.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:18px}.metric{border:1px solid var(--line);border-radius:8px;padding:14px;background:#fff}.metric strong{display:block;font-size:24px;color:var(--blue);margin-top:4px}.metric span{color:var(--muted);font-size:13px}.risk-list{display:grid;gap:10px}.risk{border:1px solid var(--line);border-left:5px solid var(--amber);border-radius:8px;padding:12px 14px;background:#fff}.risk.critical{border-left-color:var(--red);background:var(--red-soft)}.risk b{display:block;margin-bottom:4px}.risk p{margin:0;color:var(--muted);font-size:13px;line-height:1.55}.actions{display:flex;align-items:center;gap:12px;margin-top:16px}.status{color:var(--muted);font-size:13px}.error{color:var(--red)}@media(max-width:820px){main{width:min(100vw - 24px,1120px);padding-top:22px}.topbar,.layout{display:block}.badge{display:inline-block;margin-top:14px}.panel{margin-bottom:14px;padding:16px}.cards{grid-template-columns:1fr}}</style></head><body><main><div class="topbar"><div><h1>HCI 巡检整改看板生成器</h1><p class="sub">上传深信服原始巡检报告，自动生成客户展示版 Word 看板。</p></div><div class="badge">输出格式：.docx</div></div><section class="layout"><div class="panel"><form id="form"><label class="upload" id="drop"><input id="file" type="file" accept=".docx"/><span><p class="upload-title">拖入巡检报告，或选择 Word 文件</p><p class="upload-note">支持深信服 HCI 产品服务巡检报告 .docx</p><span class="file-button">选择文件</span><div class="file-name" id="fileName"></div></span></label><div class="actions"><button id="submit" type="submit" disabled>生成整改看板</button><span class="status" id="status">等待上传文件</span></div></form></div><aside class="panel"><div class="cards"><div class="metric"><span>首页展示</span><strong>4 个指标</strong></div><div class="metric"><span>核心整改</span><strong>6 条以内</strong></div><div class="metric"><span>优先级</span><strong>P0 / P1</strong></div><div class="metric"><span>会后跟踪</span><strong>明细备查</strong></div></div><div class="risk-list"><div class="risk critical"><b>P0：先处理会影响恢复和稳定性的事项</b><p>备份空间、备份覆盖率、预警补丁、虚拟机网卡异常。</p></div><div class="risk"><b>P1：纳入近期整改计划</b><p>网络链路、STP、账号密码、端口、告警通知、虚拟机配置规范。</p></div></div></aside></section></main><script>const form=document.querySelector('#form'),fileInput=document.querySelector('#file'),fileName=document.querySelector('#fileName'),submit=document.querySelector('#submit'),statusEl=document.querySelector('#status'),drop=document.querySelector('#drop');function setFile(file){if(!file)return;if(!file.name.toLowerCase().endsWith('.docx')){statusEl.textContent='请选择 .docx 文件';statusEl.className='status error';submit.disabled=true;return}fileName.textContent=file.name;statusEl.textContent='文件已就绪';statusEl.className='status';submit.disabled=false}fileInput.addEventListener('change',()=>setFile(fileInput.files[0]));['dragenter','dragover'].forEach(name=>drop.addEventListener(name,e=>{e.preventDefault();drop.classList.add('dragging')}));['dragleave','drop'].forEach(name=>drop.addEventListener(name,e=>{e.preventDefault();drop.classList.remove('dragging')}));drop.addEventListener('drop',e=>{const file=e.dataTransfer.files[0];if(!file)return;const transfer=new DataTransfer();transfer.items.add(file);fileInput.files=transfer.files;setFile(file)});form.addEventListener('submit',async e=>{e.preventDefault();const file=fileInput.files[0];if(!file)return;submit.disabled=true;statusEl.textContent='正在生成，请稍等...';statusEl.className='status';const data=new FormData();data.append('file',file);try{const response=await fetch('/api/convert',{method:'POST',body:data});if(!response.ok){const error=await response.json().catch(()=>({error:'生成失败'}));throw new Error(error.error||'生成失败')}const blob=await response.blob();const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='HCI整改看板.docx';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);statusEl.textContent='已生成并开始下载'}catch(error){statusEl.textContent=error.message;statusEl.className='status error'}finally{submit.disabled=false}});</script></body></html>'''
+
 
 def first_match(text, pattern, fallback=""):
     m = re.search(pattern, text, re.S)
@@ -51,7 +53,6 @@ def parse_report(data):
     backup_done = first_match(text, r"已备份：(\d+)", "88")
     backup_total = first_match(text, r"\[(?:\d+)/(\d+)\]", "326")
     backup_rate = first_match(text, r"备份占比：([0-9.]+%)", "26.99%")
-
     risks = []
     para_text = "\n".join(lines)
     for m in re.finditer(r"^（(异常|告警)）(.+)$", para_text, re.M):
@@ -62,8 +63,7 @@ def parse_report(data):
         analysis = block.split("风险分析", 1)[1].split("处置建议", 1)[0].strip() if "风险分析" in block else "见原始巡检报告"
         advice = block.split("处置建议", 1)[1].strip() if "处置建议" in block else "按巡检建议处理"
         risks.append({"level": level, "name": name, "analysis": analysis, "advice": advice})
-    return {"device_id": device_id, "ip": ip, "date": date, "score": score, "critical": critical, "warning": warning,
-            "backup_done": backup_done, "backup_total": backup_total, "backup_rate": backup_rate, "risks": risks}
+    return {"device_id": device_id, "ip": ip, "date": date, "score": score, "critical": critical, "warning": warning, "backup_done": backup_done, "backup_total": backup_total, "backup_rate": backup_rate, "risks": risks}
 
 
 def set_font(run, size=10.5, bold=False, color=COLOR["ink"]):
@@ -172,10 +172,8 @@ def build_docx(report):
     sec.right_margin = Inches(0.5)
     doc.styles["Normal"].font.name = "Microsoft YaHei"
     doc.styles["Normal"]._element.rPr.rFonts.set(qn("w:eastAsia"), "Microsoft YaHei")
-
     para(doc, "超融合 HCI 巡检整改看板", 24, True, COLOR["blue"], WD_ALIGN_PARAGRAPH.CENTER, 2)
     para(doc, f"设备：HCI-{report['device_id']}（{report['ip']}）    巡检日期：{report['date']}    当前结论：需优先整改", 10.5, False, COLOR["muted"], WD_ALIGN_PARAGRAPH.CENTER, 10)
-
     cards = [("巡检得分", report["score"], "需整改", COLOR["orange2"], COLOR["orange"]), ("异常项", report["critical"], "必须优先处理", COLOR["red2"], COLOR["red"]), ("告警项", report["warning"], "纳入整改计划", COLOR["orange2"], COLOR["orange"]), ("备份覆盖率", report["backup_rate"], f"{report['backup_done']}/{report['backup_total']} 台已备份", COLOR["red2"], COLOR["red"])]
     t = doc.add_table(rows=1, cols=4)
     widths(t, [2.45, 2.45, 2.45, 2.45])
@@ -188,7 +186,6 @@ def build_docx(report):
         for txt, size, bold, col in [(label + "\n", 9.5, True, COLOR["muted"]), (value + "\n", 22, True, accent), (note, 9, False, COLOR["ink"] )]:
             r = p.add_run(txt)
             set_font(r, size, bold, col)
-
     heading(doc, "客户需要马上看到的整改项")
     t = doc.add_table(rows=1, cols=5)
     for i, h in enumerate(["优先级", "必须整改什么", "为什么要改", "下一步动作", "建议时限"]):
@@ -203,7 +200,6 @@ def build_docx(report):
         shade(row[0], fill)
     widths(t, [0.7, 2.25, 2.05, 3.0, 0.9])
     clean_table(t)
-
     doc.add_page_break()
     heading(doc, "整改路线图")
     para(doc, "建议按“先保障可恢复，再降低中断风险，最后做安全与规范化收口”的顺序推进。", 11, True, COLOR["ink"], after=8)
@@ -218,7 +214,6 @@ def build_docx(report):
         shade(row[0], COLOR["blue3"])
     widths(t, [1.25, 2.0, 3.6, 2.6])
     clean_table(t)
-
     heading(doc, "风险明细备查")
     t = doc.add_table(rows=1, cols=4)
     for i, h in enumerate(["等级", "风险项", "当前发现", "整改方向"]):
@@ -232,7 +227,6 @@ def build_docx(report):
         shade(row[0], COLOR["red2"] if risk["level"] == "异常" else COLOR["orange2"])
     widths(t, [0.7, 2.1, 4.0, 2.6])
     clean_table(t)
-
     out = io.BytesIO()
     doc.save(out)
     return out.getvalue()
@@ -252,9 +246,17 @@ class handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
+
+    def do_GET(self):
+        payload = INDEX_HTML.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
 
     def do_POST(self):
         try:
